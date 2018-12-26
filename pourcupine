@@ -1,0 +1,28 @@
+﻿import json
+import os
+import re
+import shutil
+import stat
+import subprocess
+import tempfile
+import time
+
+
+with open(os.path.expanduser('~/.pourcupinerc')) as config_file:
+    config = json.loads(config_file.read())
+
+for dst, src in config.items():
+    with tempfile.TemporaryDirectory() as directory:
+        os.chdir(directory)
+        subprocess.run(['git', 'clone', dst, '.']).check_returncode()
+        subprocess.run(['git', 'remote', 'add', 'upstream', src]).check_returncode()
+        subprocess.run(['git', 'fetch', 'upstream']).check_returncode()
+        result = subprocess.run(['git', 'remote', 'show', 'upstream'], stdout=subprocess.PIPE, universal_newlines=True)
+        result.check_returncode()
+        default_branch = re.search('HEAD branch: (.*)', result.stdout).group(1)
+        subprocess.run(['git', 'merge', '--ff-only', 'upstream/{}'.format(default_branch)]).check_returncode()
+        subprocess.run(['git', 'push']).check_returncode()
+        os.chdir('..')
+        for root, directories, files in os.walk(directory):
+            for name in files:
+                os.chmod(os.path.join(root, name), stat.S_IWRITE)
