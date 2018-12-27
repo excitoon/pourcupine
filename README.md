@@ -12,9 +12,15 @@ pourcupine
 
 ```
 {
-    "<DST>": "<SRC>",
-    ...,
-    "<DST>": "<SRC>"
+    "repositories": {
+        "<DST>": {
+            "source": "<SRC>"
+        },
+        ...
+        "<DST>": {
+            "source": "<SRC>"
+        }
+    }
 }
 ```
 

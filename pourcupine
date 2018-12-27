@@ -1,4 +1,5 @@
-﻿import json
+﻿import collections
+import json
 import os
 import re
 import shutil
@@ -8,23 +9,41 @@ import tempfile
 import time
 
 
-with open(os.path.expanduser('~/.pourcupinerc')) as config_file:
-    config = json.loads(config_file.read())
+config_path = os.path.expanduser('~/.pourcupinerc')
+with open(config_path) as config_file:
+    config = json.loads(config_file.read(), object_pairs_hook=collections.OrderedDict)
 
-for dst, src in config.items():
+def get_default_branch():
+    result = subprocess.run(['git', 'remote', 'show', 'upstream'], stdout=subprocess.PIPE, universal_newlines=True)
+    result.check_returncode()
+    return re.search('HEAD branch: (.*)', result.stdout).group(1)
+
+for repository, info in config['repositories'].items():
     with tempfile.TemporaryDirectory() as directory:
         try:
             os.chdir(directory)
-            subprocess.run(['git', 'clone', dst, '.']).check_returncode()
-            subprocess.run(['git', 'remote', 'add', 'upstream', src]).check_returncode()
+            info['step'] = 'clone'
+            subprocess.run(['git', 'clone', repository, '.']).check_returncode()
+            subprocess.run(['git', 'remote', 'add', 'upstream', info['source']]).check_returncode()
+            info['step'] = 'fetch'
             subprocess.run(['git', 'fetch', 'upstream']).check_returncode()
-            result = subprocess.run(['git', 'remote', 'show', 'upstream'], stdout=subprocess.PIPE, universal_newlines=True)
-            result.check_returncode()
-            default_branch = re.search('HEAD branch: (.*)', result.stdout).group(1)
-            subprocess.run(['git', 'merge', '--ff-only', 'upstream/{}'.format(default_branch)]).check_returncode()
+            info['step'] = 'merge'
+            subprocess.run(['git', 'merge', '--ff-only', 'upstream/{}'.format(get_default_branch())]).check_returncode()
+            info['step'] = 'push'
             subprocess.run(['git', 'push']).check_returncode()
+            del info['step']
+            info['status'] = 'success'
+            info['update-time'] = time.time()
+        except KeyboardInterrupt:
+            info['status'] = 'cancelled'
+            break
+        except:
+            info['status'] = 'failed'
         finally:
             os.chdir('..')
             for root, directories, files in os.walk(directory):
                 for name in files:
                     os.chmod(os.path.join(root, name), stat.S_IWRITE)
+
+with open(config_path, 'w') as config_file:
+    config_file.write(json.dumps(config, indent=4))
